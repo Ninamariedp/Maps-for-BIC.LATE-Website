@@ -1,0 +1,165 @@
+---
+title: "Year of Introduction of Law"
+output: html_document
+self_contained: true
+---
+
+```{r setup, include=FALSE}
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+rm( list = ls())
+setwd("C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite")
+install.packages("pacman")
+library(pacman)
+pacman::p_load(tidyverse, dplyr, srvyr, haven, expss, writexl, labelled, convey, eurostat, leaflet, readxl, 
+               openxlsx, distill, shiny, sf, svglite, rnaturalearth, rnaturalearthdata, htmlwidgets, rmarkdown)
+
+# Setting global chunk options to not show the code:
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+
+```{r}
+# Loading excel data into R:
+excel_path <- "C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite/MARpolicies_data_ex.xlsx"
+MAR_data <- read_excel(excel_path)
+excel_path1 <- "C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite/artregulation.xlsx"
+ART_regulation_data <- read_excel(excel_path1)
+
+# Merging the two data frames by country: 
+MAR_ART_data <- merge(MAR_data, ART_regulation_data, by = "country", all.x = TRUE)
+
+
+
+# Creating a Europe map and mapping it with the excel data:
+europe_map <- ne_countries(continent = "Europe", returnclass = "sf")
+
+europe_map <- europe_map %>%
+  select(sovereignt, geometry)
+
+MAR_ART_data <- MAR_ART_data %>%
+  rename(sovereignt = country)
+
+
+# Renaming some countries so they match: 
+MAR_ART_data <- MAR_ART_data %>%
+  mutate(sovereignt = ifelse(sovereignt == "UK", "United Kingdom", sovereignt))
+
+MAR_ART_data <- MAR_ART_data %>%
+  mutate(sovereignt = ifelse(sovereignt == "Bosnia-Herz", "Bosnia and Herzegovina", sovereignt))
+
+MAR_ART_data <- MAR_ART_data %>%
+  mutate(sovereignt = ifelse(sovereignt == "Serbia", "Republic of Serbia", sovereignt))
+
+
+# Adding missing countries to my europe_map df:
+Armenia <- ne_countries(scale = "medium", country = "armenia", type = "countries", returnclass = "sf")
+Armenia <- Armenia %>%
+  select(sovereignt, geometry)
+
+Cyprus <- ne_countries(scale = "medium", country = "cyprus", returnclass = "sf")
+Cyprus <- Cyprus %>%
+  select(sovereignt, geometry)
+
+Georgia <- ne_countries(scale = "medium", country = "georgia", returnclass = "sf")
+Georgia <- Georgia %>%
+  select(sovereignt, geometry)
+
+Macedonia <- ne_countries(scale = "medium", country = "north macedonia", returnclass = "sf")
+Macedonia <- Macedonia %>%
+  select(sovereignt, geometry)
+
+Malta <- ne_countries(scale = "medium", country = "malta", returnclass = "sf")
+Malta <- Malta %>%
+  select(sovereignt, geometry)
+
+Turkey <- ne_countries(scale = "medium", country = "turkey", returnclass = "sf")
+Turkey <- Turkey %>%
+  select(sovereignt, geometry)
+
+# Combining the new countries with the europe_map df:
+europe_map <- rbind(europe_map, Armenia, Cyprus, Georgia, Macedonia, Malta, Turkey)
+
+# Merging the europe map data with the MAR ART data: 
+europe_map <- europe_map %>%
+  left_join(MAR_ART_data, by = "sovereignt")
+
+europe_map$agelimit_accessivf_f[europe_map$agelimit_accessivf_f == 0] <- "no age limit"  # replacing all zeros with "No age limit"
+europe_map$agelimit_accessivf_f[is.na(europe_map$agelimit_accessivf_f)] <- "no information"  # replacing all NAs with "No information"
+
+# europe_map <- europe_map %>% mutate(across(everything(), ~na_if(., 0)))  # replacing all zeros with NAs
+
+
+# Creating a color palette for the introduction years:
+unique_firstlaw_values <- unique(europe_map$firstlaw)
+unique_firstlaw_list <- as.list(unique_firstlaw_values) 
+color_palette <- colorFactor(
+  palette = "viridis", 
+  domain = unique_firstlaw_values,
+  na.color = "gray")
+
+
+# Creating the map: 
+leaflet(data = europe_map) %>%
+  addTiles() %>%
+  setView(lng = 28, lat = 58, zoom = 3) %>% 
+  addPolygons(
+    fillColor = ~color_palette(firstlaw),
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.7,
+    label = ~paste(sovereignt, ": ", firstlaw, sep = ""),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "#666",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    popup = ~paste(
+      "<b>Country:</b>", sovereignt, "<br>",
+      "<b>First IVF Baby:</b>", firstivfbaby, "<br>",
+      "<b>Previous age limit on IVF access for females:</b>", agelimit_accessivf_f_prev, "<br>",
+      "<b>Year of change in law on age limit on IFV access:</b>", agelimit_accessivf_f_change, "<br>",
+      "<b>Current age limit on IVF access for females:</b>", agelimit_accessivf_f, "<br>",
+      "<b>Age Limit Funding IVF Females:</b>", agelimit_fundingivf_f, "<br>",
+      "<b>Age Limit Funding IVF Females:</b>", agelimit_fundingivf_f, "<br>" 
+    )
+  ) %>%
+  addLegend(
+    pal = color_palette,
+    values = unique_firstlaw_values,
+    title = "<span style='font-size: 13px;'>Year of<br>Introduction of Law</span>",
+    opacity = 0.5,
+    labFormat = labelFormat(suffix = ""),
+    na.label = "NA",
+    position = "bottomleft", 
+  ) %>%
+   onRender("
+    function(el, x) {
+      var legend = el.getElementsByClassName('leaflet-control')[0];
+      legend.style.fontSize = '8px';
+      legend.style.width = '20px';
+      legend.style.left = '10px';  // Adjust left position
+      legend.style.bottom = '6px';  // Adjust bottom position
+      legend.style.position = 'absolute';
+      
+      var legendTitle = legend.getElementsByClassName('leaflet-control')[0].getElementsByClassName('leaflet-control')[0];
+      legendTitle.style.fontSize = '8px';
+      
+      var labels = legend.getElementsByTagName('span');
+      for (var i = 0; i < labels.length; i++) {
+        if (labels[i].className == 'legend-labels') {
+          labels[i].style.fontSize = '5 px';  // Setting the font size of legend labels
+        }
+      }
+    }
+  ")
+
+
+```
+
+
+
