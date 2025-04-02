@@ -1,5 +1,5 @@
 ---
-title: "Year of Introduction of Law"
+title: "Illustrative Maps of ART Data Base 'Assisted Reproduction Law Database: Access & Age in High-Income Countries'"
 output: html_document
 self_contained: true
 ---
@@ -9,11 +9,9 @@ self_contained: true
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
 rm( list = ls())
-setwd("C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite")
-install.packages("pacman")
-library(pacman)
-pacman::p_load(tidyverse, dplyr, srvyr, haven, expss, writexl, labelled, convey, eurostat, leaflet, readxl, 
-               openxlsx, distill, shiny, sf, svglite, rnaturalearth, rnaturalearthdata, htmlwidgets, rmarkdown)
+knitr::opts_knit$set(root.dir = "  ")
+pacman::p_load(pacman, tidyverse, dplyr, srvyr, haven, expss, writexl, labelled, convey, eurostat, leaflet, readxl, htmltools, 
+               openxlsx, distill, shiny, sf, svglite, rnaturalearth, rnaturalearthdata, htmlwidgets, rmarkdown, leaflegend)
 
 # Setting global chunk options to not show the code:
 knitr::opts_chunk$set(echo = FALSE)
@@ -23,14 +21,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 ```{r}
 # Loading excel data into R:
-excel_path <- "C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite/MARpolicies_data_ex.xlsx"
-MAR_data <- read_excel(excel_path)
-excel_path1 <- "C:/Users/ndippold/Documents/ndippold (w07ds2OeAW_Projekte02$VID_homes)/R - Copy (2)/VisualsWebsite/artregulation.xlsx"
-ART_regulation_data <- read_excel(excel_path1)
-
-# Merging the two data frames by country: 
-MAR_ART_data <- merge(MAR_data, ART_regulation_data, by = "country", all.x = TRUE)
-
+database_data <- read_excel("./Assisted-Reproduction-Law-Database-Access-Age-in-High-Income-Countries.xlsx")
 
 
 # Creating a Europe map and mapping it with the excel data:
@@ -39,18 +30,18 @@ europe_map <- ne_countries(continent = "Europe", returnclass = "sf")
 europe_map <- europe_map %>%
   select(sovereignt, geometry)
 
-MAR_ART_data <- MAR_ART_data %>%
+database_data <- database_data %>%
   rename(sovereignt = country)
 
 
 # Renaming some countries so they match: 
-MAR_ART_data <- MAR_ART_data %>%
+database_data <- database_data %>%
   mutate(sovereignt = ifelse(sovereignt == "UK", "United Kingdom", sovereignt))
 
-MAR_ART_data <- MAR_ART_data %>%
-  mutate(sovereignt = ifelse(sovereignt == "Bosnia-Herz", "Bosnia and Herzegovina", sovereignt))
+database_data <- database_data %>%
+  mutate(sovereignt = ifelse(sovereignt == "Bosnia-Herzegovina", "Bosnia and Herzegovina", sovereignt))
 
-MAR_ART_data <- MAR_ART_data %>%
+database_data <- database_data %>%
   mutate(sovereignt = ifelse(sovereignt == "Serbia", "Republic of Serbia", sovereignt))
 
 
@@ -78,40 +69,79 @@ Malta <- Malta %>%
 Turkey <- ne_countries(scale = "medium", country = "turkey", returnclass = "sf")
 Turkey <- Turkey %>%
   select(sovereignt, geometry)
+Turkey <- Turkey %>%
+  mutate(sovereignt = ifelse(sovereignt == "Turkey", "Türkiye", sovereignt))
+
+Japan <- ne_countries(scale = "medium", country = "japan", returnclass = "sf")
+Japan <- Japan %>%
+  select(sovereignt, geometry)
+
+South_Korea <- ne_countries(scale = "medium", country = "south korea", returnclass = "sf")
+South_Korea <- South_Korea %>%
+  select(sovereignt, geometry)
+
+Israel <- ne_countries(scale = "medium", country = "israel", returnclass = "sf")
+Israel <- Israel %>%
+  select(sovereignt, geometry)
+
 
 # Combining the new countries with the europe_map df:
-europe_map <- rbind(europe_map, Armenia, Cyprus, Georgia, Macedonia, Malta, Turkey)
+europe_map <- rbind(europe_map, Armenia, Cyprus, Georgia, Macedonia, Malta, Turkey, Japan, South_Korea, Israel)
 
-# Merging the europe map data with the MAR ART data: 
+# Merging the europe map data with the ART data: 
 europe_map <- europe_map %>%
-  left_join(MAR_ART_data, by = "sovereignt")
+  left_join(database_data, by = "sovereignt")
 
-europe_map$agelimit_accessivf_f[europe_map$agelimit_accessivf_f == 0] <- "no age limit"  # replacing all zeros with "No age limit"
+```
+
+
+```{r}
+
+### FIRST MAP: Age Limit for IVF Access in European Countries and others
+europe_map$agelimit_accessivf_f_prev[is.na(europe_map$agelimit_accessivf_f_prev)] <- "no information"  # replacing all NAs with "No information"
+europe_map$agelimit_accessivf_f[europe_map$agelimit_accessivf_f == "none"] <- "no age limit"  # replacing all zeros with "No age limit"
 europe_map$agelimit_accessivf_f[is.na(europe_map$agelimit_accessivf_f)] <- "no information"  # replacing all NAs with "No information"
+europe_map$agelimit_accessivf_f_change[europe_map$agelimit_accessivf_f_change == "none"] <- "no change"  # replacing all zeros with "No change"
+europe_map$agelimit_accessivf_f_change[is.na(europe_map$agelimit_accessivf_f_change)] <- "no information"  # replacing all NAs with "No information"
 
-# europe_map <- europe_map %>% mutate(across(everything(), ~na_if(., 0)))  # replacing all zeros with NAs
+# changing "normal childbearing age" to "reproductive age" for Iceland: 
+europe_map <- europe_map %>%
+  mutate(agelimit_accessivf_f = if_else(agelimit_accessivf_f == "normal childbearing age", "reproductive age", agelimit_accessivf_f))
+
+# Creating a color palette for the age limit on access to IVF for females in age groups:
+# Creating a column with the categories: 
+europe_map <- europe_map %>%
+  mutate(agelimit_access_category = case_when(
+    agelimit_accessivf_f == "no information" ~ "no information",
+    agelimit_accessivf_f == "no age limit" ~ "no age limit",
+    agelimit_accessivf_f == "reproductive age" ~ "reproductive age",
+    agelimit_accessivf_f < 45 ~ "< 45",
+    agelimit_accessivf_f >= 45 & agelimit_accessivf_f <= 50 ~ "45-50",
+    agelimit_accessivf_f > 50 ~ "> 50",
+    TRUE ~ as.character(agelimit_accessivf_f)  # Handle non-numeric entries like "no limit"
+  ))
 
 
-# Creating a color palette for the introduction years:
-unique_firstlaw_values <- unique(europe_map$firstlaw)
-unique_firstlaw_list <- as.list(unique_firstlaw_values) 
-color_palette <- colorFactor(
-  palette = "viridis", 
-  domain = unique_firstlaw_values,
-  na.color = "gray")
+categories <- c("< 45", "> 50", "45-50", "no age limit", "no information", "reproductive age") 
+colors <- c("#ffe83b", "#c62828", "#303f9f", "#55882f", "#37474f", "#8e24aa") 
 
+
+color_palette_access <- colorFactor(
+  domain = categories,
+  palette = colors
+)
 
 # Creating the map: 
-leaflet(data = europe_map) %>%
+map_access <- leaflet(data = europe_map) %>%
   addTiles() %>%
   setView(lng = 28, lat = 58, zoom = 3) %>% 
   addPolygons(
-    fillColor = ~color_palette(firstlaw),
+    fillColor = ~color_palette_access(agelimit_access_category),
     weight = 1,
     opacity = 1,
     color = "white",
     fillOpacity = 0.7,
-    label = ~paste(sovereignt, ": ", firstlaw, sep = ""),
+    label = ~paste(sovereignt, ": ", agelimit_access_category, sep = ""),
     highlightOptions = highlightOptions(
       weight = 3,
       color = "#666",
@@ -120,44 +150,194 @@ leaflet(data = europe_map) %>%
     ),
     popup = ~paste(
       "<b>Country:</b>", sovereignt, "<br>",
-      "<b>First IVF Baby:</b>", firstivfbaby, "<br>",
+      "<b>First IVF Baby:</b>", first_ivf_baby, "<br>",
       "<b>Previous age limit on IVF access for females:</b>", agelimit_accessivf_f_prev, "<br>",
-      "<b>Year of change in law on age limit on IFV access:</b>", agelimit_accessivf_f_change, "<br>",
-      "<b>Current age limit on IVF access for females:</b>", agelimit_accessivf_f, "<br>",
-      "<b>Age Limit Funding IVF Females:</b>", agelimit_fundingivf_f, "<br>",
-      "<b>Age Limit Funding IVF Females:</b>", agelimit_fundingivf_f, "<br>" 
+      "<b>Year of change in law on age limit for IFV access:</b>", agelimit_accessivf_f_change, "<br>",
+      "<b>Current age limit on IVF access for females:</b>", agelimit_accessivf_f, "<br>"
     )
   ) %>%
   addLegend(
-    pal = color_palette,
-    values = unique_firstlaw_values,
-    title = "<span style='font-size: 13px;'>Year of<br>Introduction of Law</span>",
+    pal = color_palette_access,
+    values = categories,
+    title = "<span style='font-size: 13px;'>Age Limit for IVF Access</span>",
     opacity = 0.5,
     labFormat = labelFormat(suffix = ""),
-    na.label = "NA",
-    position = "bottomleft", 
-  ) %>%
-   onRender("
-    function(el, x) {
-      var legend = el.getElementsByClassName('leaflet-control')[0];
-      legend.style.fontSize = '8px';
-      legend.style.width = '20px';
-      legend.style.left = '10px';  // Adjust left position
-      legend.style.bottom = '6px';  // Adjust bottom position
-      legend.style.position = 'absolute';
-      
-      var legendTitle = legend.getElementsByClassName('leaflet-control')[0].getElementsByClassName('leaflet-control')[0];
-      legendTitle.style.fontSize = '8px';
-      
-      var labels = legend.getElementsByTagName('span');
-      for (var i = 0; i < labels.length; i++) {
-        if (labels[i].className == 'legend-labels') {
-          labels[i].style.fontSize = '5 px';  // Setting the font size of legend labels
-        }
-      }
-    }
-  ")
+    position = "topright")
 
+map_access 
+saveWidget(map_access, "map_IVF_access.html", selfcontained = TRUE)
+
+
+```
+
+
+```{r}
+
+### SECOND MAP: Age Limit for IVF Funding in European Countries and others
+europe_map$agelimitfundivf_f_prev[is.na(europe_map$agelimitfundivf_f_prev)] <- "no information"  # replacing all NAs with "No information"
+europe_map$agelimit_fundingivf_f[europe_map$agelimit_fundingivf_f == "none"] <- "no age limit"  # replacing all zeros with "No age limit"
+europe_map$agelimit_fundingivf_f[is.na(europe_map$agelimit_fundingivf_f)] <- "no information"  # replacing all NAs with "No information"
+europe_map$agelimitfundivf_f_change[europe_map$agelimitfundivf_f_change == "none"] <- "no change"  # replacing all zeros with "No change"
+europe_map$agelimitfundivf_f_change[is.na(europe_map$agelimitfundivf_f_change)] <- "no information"  # replacing all NAs with "No information"
+europe_map$agelimit_fundingivf_f[europe_map$agelimit_fundingivf_f == "reco"] <- "guidelines for practitioners"
+
+
+# Creating a color palette for the age limit on access to IVF for females in age groups:
+# Creating a column with the categories: 
+europe_map <- europe_map %>%
+  mutate(agelimit_funding_category = case_when(
+    agelimit_fundingivf_f == "no information" ~ "no information",
+    agelimit_fundingivf_f == "no age limit" ~ "no age limit",
+    agelimit_fundingivf_f == "no funding" ~ "no funding",
+    agelimit_fundingivf_f == "guidelines for practitioners" ~ "guidelines for practitioners",
+    agelimit_fundingivf_f < 45 ~ "< 45",
+    agelimit_fundingivf_f >= 45 & agelimit_fundingivf_f <= 50 ~ "45-50",
+    agelimit_fundingivf_f == "varies" ~ "varies",
+    TRUE ~ as.character(agelimit_fundingivf_f)  # Handle non-numeric entries like "no limit"
+  ))
+
+
+categories1 <- c("< 45", "45-50", "varies", "no age limit", "no information", "no funding", "guidelines for practitioners") 
+colors1 <- c("#ffe83b", "#c62828", "#303f9f", "#55882f", "gray", "#37474f", "#cddc39") 
+
+europe_map <- europe_map %>%
+  mutate(agelimit_access_category = factor(agelimit_access_category, levels = categories1))
+
+color_palette_funding <- colorFactor(
+  domain = categories1,
+  palette = colors1
+)
+
+
+# Creating the map: 
+map_funding <- leaflet(data = europe_map) %>%
+  addTiles() %>%
+  setView(lng = 28, lat = 58, zoom = 3) %>% 
+  addPolygons(
+    fillColor =  ~color_palette_funding(agelimit_funding_category),
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.7,
+    label = ~paste(sovereignt, ": ", agelimit_funding_category, sep = ""),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "#666",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    popup = ~paste(
+      "<b>Country:</b>", sovereignt, "<br>",
+      "<b>First IVF Baby:</b>", first_ivf_baby, "<br>",
+      "<b>Previous age limit on IVF funding for females:</b>", agelimitfundivf_f_prev, "<br>",
+      "<b>Year of change in law on age limit for IFV funding:</b>", agelimitfundivf_f_change, "<br>",
+      "<b>Current age limit on IVF funding for females:</b>", agelimit_fundingivf_f, "<br>"
+    )
+  ) %>%
+  addLegend(
+    pal = color_palette_funding,
+    values = categories1,
+    title = "<span style='font-size: 13px;'>Age Limit for IVF Funding</span>",
+    opacity = 0.5,
+    labFormat = labelFormat(suffix = ""),
+    position = "topright")
+
+map_funding
+saveWidget(map_funding, "map_IVF_funding.html", selfcontained = TRUE)
+
+```
+
+
+```{r}
+
+### THIRD MAP: Extension of 'Medically Assisted Reproduction to Single and Lesbian Women - a Trend Towards More Permissive MAR Legislation in European Countries and others'
+europe_map$access_single[is.na(europe_map$access_single)] <- "no information"  # replacing all NAs with "No information"
+europe_map$access_lesbian[is.na(europe_map$access_lesbian)] <- "no information"  # replacing all NAs with "No information"
+
+
+europe_map <- europe_map %>%
+  mutate(
+    access = case_when(
+      access_single == "not allowed" & access_lesbian == "not allowed" ~ "neither single women nor lesbian couples",
+      access_single == "no specific law" & access_lesbian == "no specific law" ~ "no specific law",
+      access_single == "no information" & access_lesbian == "no information" ~ "no information",
+      access_single == access_lesbian ~ "single women and lesbian couples at the same time",
+      access_single == "not allowed" & is.numeric(as.numeric(access_lesbian)) ~ "lesbian couples only",
+      is.numeric(as.numeric(access_single)) & access_lesbian == "not allowed" ~ "single women only",
+      is.numeric(as.numeric(access_single)) & is.numeric(as.numeric(access_lesbian)) & as.numeric(access_single) > as.numeric(access_lesbian) ~ "lesbian couples earlier than single women",
+      is.numeric(as.numeric(access_single)) & is.numeric(as.numeric(access_lesbian)) & as.numeric(access_lesbian) > as.numeric(access_single) ~ "single women earlier than lesbian couples",
+      TRUE ~ "unknown"
+    )
+  )
+
+unique_categories <- unique(europe_map$access)
+print(unique_categories)
+
+europe_map <- europe_map %>%
+  mutate(access = factor(access, levels = c(
+    "single women and lesbian couples at the same time",
+    "single women earlier than lesbian couples",
+    "single women only",
+    "lesbian couples earlier than single women",
+    "lesbian couples only",
+    "neither single women nor lesbian couples",
+    "no information",
+    "no specific law"
+  )))
+
+
+categories2 <- c(
+  "single women and lesbian couples at the same time",
+  "single women only",
+  "lesbian couples only",
+  "lesbian couples earlier than single women",
+  "single women earlier than lesbian couples",
+  "neither single women nor lesbian couples",
+  "no information", "unknown"
+)
+
+colors2 <- c("#303f9f", "#cddc39", "gray", "#37474f", "#8e24aa", "#d2691e", "#c62828", "#55882f")
+
+# Create a color palette function
+color_palette_access <- colorFactor(
+  palette = colors2,
+  domain = levels(europe_map$access))
+
+
+# Creating the map: 
+map_access_when <- leaflet(data = europe_map) %>%
+  addTiles() %>%
+  setView(lng = 28, lat = 58, zoom = 3) %>% 
+  addPolygons(
+    fillColor =  ~color_palette_access(access),
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.7,
+    label = ~paste(sovereignt, ": ", access, sep = ""),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "#666",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    popup = ~paste(
+      "<b>Country:</b>", sovereignt, "<br>",
+      "<b>Access to IVF extended to:</b>", access, "<br>",
+      "<b>Access to IVF extended to single women:</b>", access_single, "<br>",
+      "<b>Access to IVF extended to lesbian women:</b>", access_lesbian, "<br>"
+    )
+  ) %>%
+  addLegend(
+    pal = color_palette_access,
+    values = levels(europe_map$access),
+    title = "<span style='font-size: 13px;'>Access of MAR extended to:</span>",
+    opacity = 0.5,
+    labFormat = labelFormat(suffix = ""),
+    position = "topright")
+
+map_access_when
+saveWidget(map_access_when, "map_access_when.html", selfcontained = TRUE)
 
 ```
 
